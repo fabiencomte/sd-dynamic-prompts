@@ -1,8 +1,30 @@
 # Stable Diffusion Dynamic Prompts extension
 A custom extension for [AUTOMATIC1111/stable-diffusion-webui](https://github.com/AUTOMATIC1111/stable-diffusion-webui) that implements an expressive template language for random or combinatorial prompt generation along with features to support deep wildcard directory structures.
 
-This is a fork made for ForgeNeo with Python 3.13 support.
-This fork is maintained for ForgeNeo. Compatibility with other Stable Diffusion WebUI versions, other Forge versions, or other related software is not guaranteed.
+## Forge Classic 2.28.1 compatibility
+
+This fork targets [sd-webui-forge-classic 2.28.1](https://github.com/Haoming02/sd-webui-forge-classic/tree/neo) (Forge Neo) on Python 3.13 and Gradio 4.40.0.
+
+### Why this fork?
+
+Dynamic Prompts no longer worked on my Forge Classic 2.28.1 installation, and I found the extension too useful to simply give up on it. I migrated the Forge Neo compatibility fixes, completed the remaining Windows work, and tested the result with a little help from AI. I hope this fork saves other Forge users some time and proves useful to the community.
+
+It includes the compatibility fixes required to:
+
+- load Dynamic Prompts after Forge moved the infotext parser to `modules.infotext_utils`;
+- keep Forge batch-grid metadata synchronized with expanded dynamic prompts;
+- install the Python 3.13-compatible `send2trash` release;
+- write prompt CSV files correctly on Windows without blank lines.
+
+The fork was validated on Windows with **28 passing tests**, both txt2img and img2img panels, all 13 Dynamic Prompts settings, the Wildcards Manager tab, combinatorial prompt expansion, and nested wildcard resolution.
+
+Install this Forge-compatible fork with:
+
+```text
+https://github.com/fabiencomte/sd-dynamic-prompts
+```
+
+This work builds on the Forge Neo compatibility fixes from [abzaloff/sd-dynamic-prompts](https://github.com/abzaloff/sd-dynamic-prompts) and the original project by [adieyal](https://github.com/adieyal/sd-dynamic-prompts). Compatibility with other WebUI or Forge versions is not guaranteed.
 
 Looking for ComfyUI nodes? Find them [here](https://github.com/adieyal/comfyui-dynamicprompts).
 
