@@ -1,4 +1,5 @@
-from tempfile import NamedTemporaryFile
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import pytest
 
@@ -24,14 +25,15 @@ def populated_prompt_writer() -> PromptWriter:
 
 class TestPromptWriter:
     def _write_to_file(self, prompt_writer: PromptWriter) -> None:
-        with NamedTemporaryFile("w", encoding="utf-8", delete=True) as f:
-            prompt_writer.write_prompts(f.name)
+        with TemporaryDirectory() as directory:
+            prompt_writer.write_prompts(Path(directory) / "prompts.csv")
 
     def _checks_writes_empty_file(self, prompt_writer: PromptWriter) -> bool:
-        with NamedTemporaryFile("w", encoding="utf-8", delete=True) as f:
-            prompt_writer.write_prompts(f.name)
-            output = open(f.name).read()
-            return output == ""
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "prompts.csv"
+            path.touch()
+            prompt_writer.write_prompts(path)
+            return path.read_text(encoding="utf-8") == ""
 
     def test_default_disabled(self, prompt_writer: PromptWriter) -> None:
         assert prompt_writer.enabled is False
@@ -67,17 +69,17 @@ class TestPromptWriter:
     def test_write_prompts(self, populated_prompt_writer: PromptWriter) -> None:
         populated_prompt_writer.enabled = True
 
-        with NamedTemporaryFile("w", encoding="utf-8", delete=True) as f:
-            populated_prompt_writer.write_prompts(f.name)
-            with open(f.name) as f2:
-                lines = f2.read().splitlines()
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "prompts.csv"
+            populated_prompt_writer.write_prompts(path)
+            lines = path.read_text(encoding="utf-8").splitlines()
 
-                assert lines == [
-                    "positive_prompt,negative_prompt",
-                    "positive,negative",
-                    "positive1,negative1",
-                    "positive2,negative2",
-                ]
+            assert lines == [
+                "positive_prompt,negative_prompt",
+                "positive,negative",
+                "positive1,negative1",
+                "positive2,negative2",
+            ]
 
     def test_only_write_once(self, populated_prompt_writer: PromptWriter) -> None:
         populated_prompt_writer.enabled = True
