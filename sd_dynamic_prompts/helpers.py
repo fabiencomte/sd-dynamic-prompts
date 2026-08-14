@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from itertools import cycle, islice, product
 from pathlib import Path
 
@@ -29,8 +30,14 @@ def get_seeds(
         if is_combinatorial:
             all_seeds = []
             all_subseeds = [subseed] * num_seeds
+            prompts_per_batch = math.ceil(num_seeds / combinatorial_batches)
+            remaining = num_seeds
             for i in range(combinatorial_batches):
-                all_seeds.extend([seed + i] * (num_seeds // combinatorial_batches))
+                batch_count = min(prompts_per_batch, remaining)
+                all_seeds.extend([seed + i] * batch_count)
+                remaining -= batch_count
+                if remaining == 0:
+                    break
         else:
             all_seeds = [seed] * num_seeds
             all_subseeds = [subseed] * num_seeds
@@ -103,7 +110,26 @@ def generate_prompts(
     if num_prompts is None:
         return generate_prompt_cross_product(all_prompts, all_negative_prompts)
 
-    return all_prompts, repeat_iterable_to_length(all_negative_prompts, num_prompts)
+    return all_prompts, repeat_iterable_to_length(
+        all_negative_prompts,
+        len(all_prompts),
+    )
+
+
+def repeat_prompt_batches(
+    prompts: list[str],
+    negative_prompts: list[str],
+    batches: int,
+    max_prompts: int | None = None,
+) -> tuple[list[str], list[str]]:
+    """Repeat aligned prompt pairs by batch and optionally cap the total."""
+    batches = max(1, int(batches))
+    repeated_prompts = prompts * batches
+    repeated_negative_prompts = negative_prompts * batches
+    if max_prompts is not None:
+        repeated_prompts = repeated_prompts[:max_prompts]
+        repeated_negative_prompts = repeated_negative_prompts[:max_prompts]
+    return repeated_prompts, repeated_negative_prompts
 
 
 def generate_prompt_cross_product(

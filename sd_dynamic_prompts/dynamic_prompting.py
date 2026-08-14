@@ -23,6 +23,7 @@ from sd_dynamic_prompts.helpers import (
     get_seeds,
     load_magicprompt_models,
     repeat_iterable_to_length,
+    repeat_prompt_batches,
     should_freeze_prompt,
 )
 from sd_dynamic_prompts.paths import (
@@ -45,6 +46,35 @@ if is_debug:
 
 def _get_effective_prompt(prompts: list[str], prompt: str) -> str:
     return prompts[0] if prompts else prompt
+
+
+def _synchronize_job_count(original_n_iter: int, updated_n_iter: int) -> None:
+    """Keep Forge's precomputed progress total aligned with a changed n_iter."""
+    if original_n_iter == updated_n_iter or original_n_iter <= 0:
+        return
+
+    try:
+        from modules.shared import state
+    except (ImportError, AttributeError):
+        return
+
+    job_count = getattr(state, "job_count", -1)
+    if job_count <= 0:
+        # The normal txt2img/img2img path uses -1 here and lets Forge read the
+        # updated p.n_iter after extension processing.
+        return
+
+    if job_count % original_n_iter:
+        logger.warning(
+            "Could not safely synchronize Forge job count %s after n_iter changed "
+            "from %s to %s.",
+            job_count,
+            original_n_iter,
+            updated_n_iter,
+        )
+        return
+
+    state.job_count = (job_count // original_n_iter) * updated_n_iter
 
 
 loaded_count = 0
@@ -410,15 +440,20 @@ class Script(scripts.Script):
             original_negative_hr_prompt = original_negative_prompt
 
         original_seed = p.seed
-        num_images = p.n_iter * p.batch_size
+        original_n_iter = int(p.n_iter)
+        requested_images = original_n_iter * int(p.batch_size)
+        combinatorial_batches = max(1, int(combinatorial_batches))
+        max_generations = max(0, int(max_generations))
 
+        combinatorial_limit = None
+        num_prompts = requested_images
         if is_combinatorial:
-            if max_generations == 0:
-                num_images = None
-            else:
-                num_images = max_generations
-
-        combinatorial_batches = int(combinatorial_batches)
+            combinatorial_limit = max_generations or None
+            num_prompts = (
+                None
+                if combinatorial_limit is None
+                else math.ceil(combinatorial_limit / combinatorial_batches)
+            )
         if self._auto_purge_cache:
             self._wildcard_manager.clear_cache()
 
@@ -441,7 +476,16 @@ class Script(scripts.Script):
                     enable_jinja_templates,
                     limit_prompts=self._limit_jinja_prompts,
                 )
-                .set_is_combinatorial(is_combinatorial, combinatorial_batches)
+                # Prompt batches are repeated after positive/negative prompts
+                # have been paired. Doing it inside each generator caused B²
+                # duplicates in unlimited combinatorial mode.
+                .set_is_combinatorial(
+                    is_combinatorial,
+                    combinatorial_batches=1,
+                    random_combinatorial=(
+                        is_combinatorial and combinatorial_limit is not None
+                    ),
+                )
                 .set_is_magic_prompt(
                     is_magic_prompt=is_magic_prompt,
                     magic_model=magic_model,
@@ -467,13 +511,11 @@ class Script(scripts.Script):
                 negative_generator = generator
 
             all_seeds = None
-            if num_images and not unlink_seed_from_prompt:
+            if num_prompts and not is_combinatorial and not unlink_seed_from_prompt:
                 p.all_seeds, p.all_subseeds = get_seeds(
                     p,
-                    num_images,
+                    num_prompts,
                     use_fixed_seed,
-                    is_combinatorial,
-                    combinatorial_batches,
                 )
                 all_seeds = p.all_seeds
 
@@ -482,31 +524,22 @@ class Script(scripts.Script):
                 negative_prompt_generator=negative_generator,
                 prompt=original_prompt,
                 negative_prompt=original_negative_prompt,
-                num_prompts=num_images,
+                num_prompts=num_prompts,
                 seeds=all_seeds,
             )
+
+            if is_combinatorial:
+                all_prompts, all_negative_prompts = repeat_prompt_batches(
+                    all_prompts,
+                    all_negative_prompts,
+                    combinatorial_batches,
+                    combinatorial_limit,
+                )
 
         except GeneratorException as e:
             logger.exception(e)
             all_prompts = [str(e)]
             all_negative_prompts = [str(e)]
-
-        updated_count = len(all_prompts)
-        p.n_iter = math.ceil(updated_count / p.batch_size)
-
-        if num_images != updated_count:
-            p.all_seeds, p.all_subseeds = get_seeds(
-                p,
-                updated_count,
-                use_fixed_seed,
-                is_combinatorial,
-                combinatorial_batches,
-            )
-
-        if updated_count > 1:
-            logger.info(
-                f"Prompt matrix will create {updated_count} images in a total of {p.n_iter} batches.",
-            )
 
         self._prompt_writer.set_data(
             positive_template=original_prompt,
@@ -522,6 +555,29 @@ class Script(scripts.Script):
             if original_negative_prompt:
                 params["Negative Template"] = original_negative_prompt
 
+        if no_image_generation:
+            logger.debug("No image generation requested - using one placeholder image")
+            # Forge still needs one image-save callback to write the prompt CSV.
+            # Keep every per-image list aligned with that single placeholder.
+            p.batch_size = 1
+            all_prompts = all_prompts[:1]
+            all_negative_prompts = all_negative_prompts[:1]
+
+        updated_count = len(all_prompts)
+        p.n_iter = math.ceil(updated_count / p.batch_size)
+        p.all_seeds, p.all_subseeds = get_seeds(
+            p,
+            updated_count,
+            use_fixed_seed,
+            is_combinatorial,
+            combinatorial_batches,
+        )
+
+        if updated_count > 1:
+            logger.info(
+                f"Prompt matrix will create {updated_count} images in a total of {p.n_iter} batches.",
+            )
+
         p.all_prompts = all_prompts
         p.all_negative_prompts = all_negative_prompts
 
@@ -532,12 +588,6 @@ class Script(scripts.Script):
             p.main_prompt = all_prompts[0]
         if hasattr(p, "main_negative_prompt"):
             p.main_negative_prompt = all_negative_prompts[0]
-
-        if no_image_generation:
-            logger.debug("No image generation requested - exiting")
-            # Need a minimum of batch size images to avoid errors
-            p.batch_size = 1
-            p.all_prompts = all_prompts[0:1]
 
         p.prompt_for_display = original_prompt
         p.prompt = original_prompt
@@ -553,6 +603,8 @@ class Script(scripts.Script):
                 original_negative_hr_prompt,
                 original_negative_prompt,
             )
+
+        _synchronize_job_count(original_n_iter, p.n_iter)
 
 
 callbacks.register_settings()  # Settings need to be registered early, see #754.

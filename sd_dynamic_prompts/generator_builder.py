@@ -32,6 +32,7 @@ class GeneratorBuilder:
         self._is_feeling_lucky = False
         self._is_jinja_template = False
         self._is_combinatorial = False
+        self._random_combinatorial = False
         self._is_magic_prompt = False
         self._is_attention_grabber = False
 
@@ -93,9 +94,15 @@ class GeneratorBuilder:
         self._limit_jinja_prompts = limit_prompts
         return self
 
-    def set_is_combinatorial(self, is_combinatorial=True, combinatorial_batches=1):
+    def set_is_combinatorial(
+        self,
+        is_combinatorial=True,
+        combinatorial_batches=1,
+        random_combinatorial=False,
+    ):
         self._is_combinatorial = is_combinatorial
         self._combinatorial_batches = combinatorial_batches
+        self._random_combinatorial = random_combinatorial
         return self
 
     def set_is_magic_prompt(
@@ -195,6 +202,18 @@ class GeneratorBuilder:
         self,
     ) -> PromptGenerator:
         if self._is_combinatorial:
+            if self._random_combinatorial:
+                from sd_dynamic_prompts.random_combinatorial_generator import (
+                    RandomCombinatorialPromptGenerator,
+                )
+
+                return RandomCombinatorialPromptGenerator(
+                    self._wildcard_manager,
+                    seed=self._seed,
+                    parser_config=self._parser_config,
+                    unlink_seed_from_prompt=self._unlink_seed_from_prompt,
+                    ignore_whitespace=self._ignore_whitespace,
+                )
             prompt_generator = CombinatorialPromptGenerator(
                 self._wildcard_manager,
                 parser_config=self._parser_config,

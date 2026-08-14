@@ -9,6 +9,7 @@ from sd_dynamic_prompts.helpers import (
     generate_prompts,
     get_seeds,
     load_magicprompt_models,
+    repeat_prompt_batches,
 )
 
 
@@ -38,9 +39,9 @@ def test_get_seeds_with_fixed_seed_batched_combinatorial(processing):
     )
     seed0 = processing.seed
     assert seeds == (
-        [seed0] * (num_seeds // 3)
-        + [seed0 + 1] * (num_seeds // 3)
-        + [seed0 + 2] * (num_seeds // 3)
+        [seed0] * 4
+        + [seed0 + 1] * 4
+        + [seed0 + 2] * 2
     )
     assert subseeds == [processing.subseed] * num_seeds
 
@@ -55,9 +56,9 @@ def test_get_seeds_with_fixed_seed_batched_combinatorial(processing):
     )
     seed0 = processing.all_seeds[0]
     assert seeds == (
-        [seed0] * (num_seeds // 3)
-        + [seed0 + 1] * (num_seeds // 3)
-        + [seed0 + 2] * (num_seeds // 3)
+        [seed0] * 4
+        + [seed0 + 1] * 4
+        + [seed0 + 2] * 2
     )
     assert subseeds == [processing.all_subseeds[0]] * num_seeds
 
@@ -103,6 +104,17 @@ def test_cross_product():
     negative_prompts = ["X", "Y"]
     expected_output = (["A", "A", "B", "B", "C", "C"], ["X", "Y", "X", "Y", "X", "Y"])
     assert generate_prompt_cross_product(prompts, negative_prompts) == expected_output
+
+
+def test_repeat_prompt_batches_caps_aligned_pairs():
+    prompts, negative_prompts = repeat_prompt_batches(
+        ["A", "B", "C"],
+        ["X", "Y", "Z"],
+        batches=2,
+        max_prompts=5,
+    )
+    assert prompts == ["A", "B", "C", "A", "B"]
+    assert negative_prompts == ["X", "Y", "Z", "X", "Y"]
 
 
 @pytest.mark.parametrize("num_prompts", [5, None])
@@ -175,3 +187,22 @@ def test_generate_with_num_prompts(num_prompts: int | None):
             "Negative Prompt 1",
             "Negative Prompt 2",
         ]
+
+
+def test_generate_aligns_negatives_with_short_positive_result():
+    prompt_generator = mock.Mock()
+    negative_prompt_generator = mock.Mock()
+    prompt_generator.generate.return_value = ["Positive 1", "Positive 2"]
+    negative_prompt_generator.generate.return_value = ["Negative"]
+
+    positive_prompts, negative_prompts = generate_prompts(
+        prompt_generator,
+        negative_prompt_generator,
+        "positive",
+        "negative",
+        5,
+        None,
+    )
+
+    assert positive_prompts == ["Positive 1", "Positive 2"]
+    assert negative_prompts == ["Negative", "Negative"]

@@ -1,12 +1,12 @@
-from dynamicprompts.generators import RandomPromptGenerator
+from unittest import mock
 
 from sd_dynamic_prompts.frozenprompt_generator import FrozenPromptGenerator
 
 
 def test_repeats_correctly():
-    generator = FrozenPromptGenerator(
-        RandomPromptGenerator(unlink_seed_from_prompt=True),
-    )
+    source_generator = mock.Mock()
+    source_generator.generate.side_effect = [["A"], ["B"]]
+    generator = FrozenPromptGenerator(source_generator)
     template = "{A|B|C|D|E|F|G|H|I|J|K}"
     prompts = generator.generate(template, 40)
 

@@ -14,9 +14,12 @@ It includes the compatibility fixes required to:
 - load Dynamic Prompts after Forge moved the infotext parser to `modules.infotext_utils`;
 - keep Forge batch-grid metadata synchronized with expanded dynamic prompts;
 - install the Python 3.13-compatible `send2trash` release;
-- write prompt CSV files correctly on Windows without blank lines.
+- write prompt CSV files correctly on Windows without blank lines;
+- keep Forge's Generate, Skip and Interrupt progress state aligned with the real prompt batches;
+- randomly sample unique combinations when **Max generations** limits the full prompt space;
+- keep prompts, negative prompts, hires prompts and seeds aligned for partial batches.
 
-The fork was validated on Windows with **28 passing tests**, both txt2img and img2img panels, all 13 Dynamic Prompts settings, the Wildcards Manager tab, combinatorial prompt expansion, and nested wildcard resolution.
+The fork is validated on Windows with automated regression tests, both txt2img and img2img panels, all 13 Dynamic Prompts settings, the Wildcards Manager tab, combinatorial prompt expansion, and nested wildcard resolution.
 
 Install this Forge-compatible fork with:
 
@@ -235,10 +238,10 @@ will produce:
 
 You also arbitrarily nest combinations inside wildcards and wildcards in combinations.
 
-Combinatorial generation can be useful if you want to create an image for every artist in a file. It can be enabled by checking the __Combinatorial generation__ checkbox in the ui. In order to prevent accidentially producing thousands of images, you can limit the total number of prompts generated using the **Max Generations** slider. A value of 0 (the default) will not set any limit.
+Combinatorial generation can be useful if you want to create an image for every artist in a file. It can be enabled by checking the __Combinatorial generation__ checkbox in the ui. In order to prevent accidentally producing thousands of images, you can limit the total number of prompts generated using the **Max Generations** slider. When a limit is used, unique combinations are selected randomly instead of always taking the first cases. The selection is reproducible from the prompt seed; a seed of `-1` gives a new selection on each run. A value of 0 (the default) will not set any limit.
 
 ### Combinatorial Batches
-The combinatorial batches slider lets you repeat the same set of prompts a number of times with different seeds. The default number of batches is 1.
+The combinatorial batches slider lets you repeat the same set of prompts a number of times with different seeds. These repetitions count toward **Max Generations**, so the requested maximum is never exceeded. The default number of batches is 1.
 
 ### Increasing the maximum number of generations
 By default, the __Batch count__ silder of  automatic1111 has a maximum value of 100. This can limit the maximum number of generations when using combinatorial generation. You can change the maximum value of this slider by editing ui-config.json and change:
