@@ -526,6 +526,10 @@ class Script(scripts.Script):
                 negative_prompt=original_negative_prompt,
                 num_prompts=num_prompts,
                 seeds=all_seeds,
+                sample_combinatorial_pairs=(
+                    is_combinatorial and combinatorial_limit is not None
+                ),
+                pair_seed=original_seed,
             )
 
             if is_combinatorial:

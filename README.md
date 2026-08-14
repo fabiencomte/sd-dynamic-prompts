@@ -238,7 +238,7 @@ will produce:
 
 You also arbitrarily nest combinations inside wildcards and wildcards in combinations.
 
-Combinatorial generation can be useful if you want to create an image for every artist in a file. It can be enabled by checking the __Combinatorial generation__ checkbox in the ui. In order to prevent accidentally producing thousands of images, you can limit the total number of prompts generated using the **Max Generations** slider. When a limit is used, unique combinations are selected randomly instead of always taking the first cases. The selection is reproducible from the prompt seed; a seed of `-1` gives a new selection on each run. A value of 0 (the default) will not set any limit.
+Combinatorial generation can be useful if you want to create an image for every artist in a file. It can be enabled by checking the __Combinatorial generation__ checkbox in the ui. In order to prevent accidentally producing thousands of images, you can limit the total number of prompts generated using the **Max Generations** slider. When a limit is used, unique combinations are selected randomly instead of always taking the first cases. A combination includes both the positive and negative prompt, so variants on either side participate in the random selection. The selection is reproducible from the prompt seed; a seed of `-1` gives a new selection on each run. A value of 0 (the default) will not set any limit.
 
 ### Combinatorial Batches
 The combinatorial batches slider lets you repeat the same set of prompts a number of times with different seeds. These repetitions count toward **Max Generations**, so the requested maximum is never exceeded. The default number of batches is 1.

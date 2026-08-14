@@ -86,7 +86,13 @@ def monkeypatch_webui(monkeypatch, tmp_path):
                 dp_write_prompts_to_file=False,
                 dp_write_raw_template=False,
             ),
-            "state": types.SimpleNamespace(job_count=-1, job_no=0),
+            "state": types.SimpleNamespace(
+                job_count=-1,
+                job_no=0,
+                skipped=False,
+                interrupted=False,
+                stopping_generation=False,
+            ),
         },
         "modules.script_callbacks": {
             "ImageSaveParams": object,

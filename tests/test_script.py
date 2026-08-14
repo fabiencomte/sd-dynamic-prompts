@@ -1,3 +1,5 @@
+import copy
+
 import pytest
 
 
@@ -23,7 +25,7 @@ def run_script(script, processing, **overrides):
         "magic_blocklist_regex": None,
     }
     arguments.update(overrides)
-    script.process(p=processing, **arguments)
+    return script.process(p=processing, **arguments)
 
 
 @pytest.mark.parametrize("enable_hr", [True, False], ids=["yes_hr", "no_hr"])
@@ -110,6 +112,70 @@ def test_limited_combinatorial_is_random_batched_and_strictly_capped(
     assert processing.n_iter == 3
 
 
+def test_limited_combinatorial_samples_positive_negative_pairs(
+    monkeypatch_webui,
+    processing,
+):
+    from scripts.dynamic_prompting import Script
+
+    processing.batch_size = 2
+    processing.enable_hr = True
+    processing.set_prompt_for_test("{A|B}")
+    processing.set_negative_prompt_for_test("{X|Y|Z}")
+
+    run_script(Script(), processing, max_generations=5)
+
+    pairs = list(zip(processing.all_prompts, processing.all_negative_prompts))
+    assert len(pairs) == 5
+    assert len(set(pairs)) == 5
+    assert set(pairs) <= {
+        (positive, negative)
+        for positive in {"A", "B"}
+        for negative in {"X", "Y", "Z"}
+    }
+    assert processing.n_iter == 3
+    assert len(processing.all_seeds) == 5
+    assert len(processing.all_subseeds) == 5
+    assert len(processing.all_hr_prompts) == 5
+    assert len(processing.all_hr_negative_prompts) == 5
+    assert [len(pairs[index : index + 2]) for index in range(0, len(pairs), 2)] == [
+        2,
+        2,
+        1,
+    ]
+
+
+def test_limited_pair_selection_is_reproducible_from_prompt_seed(
+    monkeypatch_webui,
+    processing,
+):
+    from scripts.dynamic_prompting import Script
+
+    repeated_processing = copy.deepcopy(processing)
+    changed_processing = copy.deepcopy(processing)
+    changed_processing.seed += 1
+    for item in (processing, repeated_processing, changed_processing):
+        item.set_prompt_for_test("{A|B|C|D|E|F|G|H}")
+        item.set_negative_prompt_for_test("{U|V|W|X|Y|Z}")
+
+    run_script(Script(), processing, max_generations=5)
+    run_script(Script(), repeated_processing, max_generations=5)
+    run_script(Script(), changed_processing, max_generations=5)
+
+    pairs = list(zip(processing.all_prompts, processing.all_negative_prompts))
+    repeated_pairs = list(
+        zip(
+            repeated_processing.all_prompts,
+            repeated_processing.all_negative_prompts,
+        ),
+    )
+    changed_pairs = list(
+        zip(changed_processing.all_prompts, changed_processing.all_negative_prompts),
+    )
+    assert pairs == repeated_pairs
+    assert pairs != changed_pairs
+
+
 def test_unlimited_combinatorial_batches_do_not_square_cross_product(
     monkeypatch_webui,
     processing,
@@ -173,3 +239,92 @@ def test_precomputed_forge_job_count_tracks_updated_iterations(
 
     assert processing.n_iter == 4
     assert state.job_count == 12
+
+
+def test_non_divisible_precomputed_job_count_is_left_to_its_owner(
+    monkeypatch_webui,
+    processing,
+):
+    from modules.shared import state
+
+    from scripts.dynamic_prompting import Script
+
+    processing.n_iter = 2
+    processing.set_prompt_for_test("{A|B|C|D}")
+    processing.set_negative_prompt_for_test("bad")
+    state.job_count = 5
+
+    run_script(Script(), processing)
+
+    assert processing.n_iter == 4
+    assert state.job_count == 5
+
+
+@pytest.mark.parametrize("mode", ["txt2img", "img2img"])
+def test_processing_modes_preserve_forge_generation_flags(
+    monkeypatch_webui,
+    processing,
+    mode,
+):
+    from modules.shared import state
+
+    from scripts.dynamic_prompting import Script
+
+    if mode == "img2img":
+        processing.init_images = [object()]
+    processing.batch_size = 2
+    processing.set_prompt_for_test("{A|B|C|D|E}")
+    processing.set_negative_prompt_for_test("bad")
+    state.skipped = True
+    state.interrupted = True
+    state.stopping_generation = True
+    state.job_no = 9
+
+    run_script(Script(), processing, max_generations=5)
+
+    assert state.skipped is True
+    assert state.interrupted is True
+    assert state.stopping_generation is True
+    assert state.job_no == 9
+    assert state.job_count == -1
+    assert processing.n_iter == 3
+    assert len(processing.all_prompts) == 5
+    assert len(processing.all_negative_prompts) == 5
+    assert len(processing.all_seeds) == 5
+    assert len(processing.all_subseeds) == 5
+
+
+def test_disabled_extension_leaves_processing_and_forge_state_untouched(
+    monkeypatch_webui,
+    processing,
+):
+    from modules.shared import state
+
+    from scripts.dynamic_prompting import Script
+    from sd_dynamic_prompts import dynamic_prompting
+
+    processing.n_iter = 2
+    processing.batch_size = 3
+    processing.set_prompt_for_test("{A|B}")
+    processing.set_negative_prompt_for_test("{X|Y}")
+    state.job_count = 7
+    state.skipped = True
+    state.interrupted = True
+    state.stopping_generation = True
+    before = vars(processing).copy()
+    dynamic_prompting.fix_seed.reset_mock()
+
+    result = run_script(
+        Script(),
+        processing,
+        is_enabled=False,
+        max_generations=1,
+    )
+
+    assert result is processing
+    assert vars(processing) == before
+    assert state.job_count == 7
+    assert state.skipped is True
+    assert state.interrupted is True
+    assert state.stopping_generation is True
+    dynamic_prompting.fix_seed.assert_not_called()

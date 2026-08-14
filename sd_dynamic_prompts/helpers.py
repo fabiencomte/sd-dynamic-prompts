@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import math
+import random
 from itertools import cycle, islice, product
 from pathlib import Path
 
@@ -80,8 +81,11 @@ def generate_prompts(
     negative_prompt_generator: PromptGenerator,
     prompt: str,
     negative_prompt: str | None,
-    num_prompts: int,
+    num_prompts: int | None,
     seeds: list[int] | None,
+    *,
+    sample_combinatorial_pairs: bool = False,
+    pair_seed: int | None = None,
 ) -> tuple[list[str], list[str]]:
     """
     Generate positive and negative prompts.
@@ -110,10 +114,54 @@ def generate_prompts(
     if num_prompts is None:
         return generate_prompt_cross_product(all_prompts, all_negative_prompts)
 
+    if sample_combinatorial_pairs:
+        return sample_prompt_pairs(
+            all_prompts,
+            all_negative_prompts,
+            num_prompts,
+            pair_seed,
+        )
+
     return all_prompts, repeat_iterable_to_length(
         all_negative_prompts,
         len(all_prompts),
     )
+
+
+def sample_prompt_pairs(
+    prompts: list[str],
+    negative_prompts: list[str],
+    max_pairs: int,
+    seed: int | None,
+) -> tuple[list[str], list[str]]:
+    """Select unique positive/negative pairs without materializing their product."""
+    if max_pairs <= 0 or not (prompts and negative_prompts):
+        return [], []
+
+    # Different templates can resolve to the same final string. Work with the
+    # actual outputs so "unique combinations" remains true for generated pairs.
+    unique_prompts = list(dict.fromkeys(prompts))
+    unique_negative_prompts = list(dict.fromkeys(negative_prompts))
+    pair_count = len(unique_prompts) * len(unique_negative_prompts)
+    sample_size = min(max_pairs, pair_count)
+
+    if sample_size == pair_count:
+        return generate_prompt_cross_product(
+            unique_prompts,
+            unique_negative_prompts,
+        )
+
+    # Sampling integer positions keeps memory proportional to the requested
+    # limit even when the Cartesian product itself is very large.
+    pair_indices = random.Random(seed).sample(range(pair_count), sample_size)
+    negative_count = len(unique_negative_prompts)
+    selected_prompts = [
+        unique_prompts[index // negative_count] for index in pair_indices
+    ]
+    selected_negative_prompts = [
+        unique_negative_prompts[index % negative_count] for index in pair_indices
+    ]
+    return selected_prompts, selected_negative_prompts
 
 
 def repeat_prompt_batches(

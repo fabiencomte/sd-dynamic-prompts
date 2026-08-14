@@ -10,6 +10,7 @@ from sd_dynamic_prompts.helpers import (
     get_seeds,
     load_magicprompt_models,
     repeat_prompt_batches,
+    sample_prompt_pairs,
 )
 
 
@@ -115,6 +116,41 @@ def test_repeat_prompt_batches_caps_aligned_pairs():
     )
     assert prompts == ["A", "B", "C", "A", "B"]
     assert negative_prompts == ["X", "Y", "Z", "X", "Y"]
+
+
+def test_sample_prompt_pairs_is_unique_seeded_and_does_not_materialize_product():
+    prompts = ["A", "B", "A"]
+    negative_prompts = ["X", "Y", "Z", "X"]
+
+    first = sample_prompt_pairs(prompts, negative_prompts, max_pairs=5, seed=123)
+    repeated = sample_prompt_pairs(prompts, negative_prompts, max_pairs=5, seed=123)
+    changed = sample_prompt_pairs(prompts, negative_prompts, max_pairs=5, seed=456)
+
+    assert first == repeated
+    assert first != changed
+    assert len(first[0]) == len(first[1]) == 5
+    assert len(set(zip(*first))) == 5
+    assert set(zip(*first)) <= {
+        (positive, negative)
+        for positive in {"A", "B"}
+        for negative in {"X", "Y", "Z"}
+    }
+
+
+def test_sample_prompt_pairs_returns_every_available_pair_below_limit():
+    prompts, negative_prompts = sample_prompt_pairs(
+        ["A", "B"],
+        ["X", "Y"],
+        max_pairs=10,
+        seed=123,
+    )
+
+    assert list(zip(prompts, negative_prompts)) == [
+        ("A", "X"),
+        ("A", "Y"),
+        ("B", "X"),
+        ("B", "Y"),
+    ]
 
 
 @pytest.mark.parametrize("num_prompts", [5, None])
